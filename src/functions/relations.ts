@@ -1,6 +1,6 @@
 import { TriggerAction, type IIIClient } from "iii-sdk";
 import type { Memory, MemoryRelation } from "../types.js";
-import { memoryToObservation, observationEmbedText, supersededAt } from "../state/memory-utils.js";
+import { memoryToObservation, observationEmbedText, writeSuccessor } from "../state/memory-utils.js";
 import { memoryTitleFromContent } from "./remember.js";
 import {
   getSearchIndex,
@@ -198,9 +198,7 @@ export function registerRelationsFunction(sdk: IIIClient, kv: StateKV): void {
           isLatest: true,
         };
 
-        existing.isLatest = false;
-        existing.updatedAt = supersededAt(existing.updatedAt, now);
-        await kv.set(KV.memories, existing.id, existing);
+        await writeSuccessor(kv, evolved, existing, now);
         try {
           getSearchIndex().remove(existing.id);
         } catch {}
@@ -211,7 +209,6 @@ export function registerRelationsFunction(sdk: IIIClient, kv: StateKV): void {
           newId: evolved.id,
         });
 
-        await kv.set(KV.memories, evolved.id, evolved);
         try {
           getSearchIndex().add(memoryToObservation(evolved), "memory");
           scheduleIndexSave();

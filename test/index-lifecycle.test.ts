@@ -375,6 +375,37 @@ describe("mem::import replace unindexes wiped records", () => {
   });
 });
 
+describe("mem::import merge unindexes memories that arrive superseded", () => {
+  it("removes an indexed memory that the import marks as not latest", async () => {
+    const sdk = makeMockSdk();
+    const kv = makeMockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    const local = makeMemory("mem_local", "zebra fact");
+    await kv.set(KV.memories, local.id, local);
+    seedIndexed(local);
+
+    const result = await sdk.trigger("mem::import", {
+      strategy: "merge",
+      exportData: {
+        version: "0.9.30",
+        exportedAt: new Date().toISOString(),
+        sessions: [],
+        observations: {},
+        memories: [
+          { ...local, isLatest: false },
+          { ...makeMemory("mem_next", "zebra fact revised"), parentId: local.id, supersedes: [local.id], version: 2 },
+        ],
+        summaries: [],
+      },
+    });
+    expect(result.success).toBe(true);
+
+    expect(getSearchIndex().has(local.id)).toBe(false);
+    expect(vectors.has(local.id)).toBe(false);
+    expect(getSearchIndex().has("mem_next")).toBe(true);
+  });
+});
+
 describe("mem::search does not return superseded memories", () => {
   it("skips memories marked isLatest=false during enrich", async () => {
     const sdk = makeMockSdk();

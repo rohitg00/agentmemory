@@ -14,6 +14,8 @@ import {
   stopKeywordRebuildRetry,
 } from "../src/functions/search.js";
 import { VectorIndex } from "../src/state/vector-index.js";
+import { withKeyedLock } from "../src/state/keyed-mutex.js";
+import { supersededButLatest } from "../src/state/memory-utils.js";
 import type { CompressedObservation, EmbeddingProvider, Memory, Session } from "../src/types.js";
 
 function mockKV() {
@@ -157,6 +159,135 @@ describe("rebuildKeywordIndex", () => {
     setVectorIndex(null);
     setEmbeddingProvider(null);
     setIndexPersistence(null);
+  });
+
+  it("demotes a memory that an interrupted supersede left current", async () => {
+    const kv = mockKV();
+    const base = { type: "fact", concepts: [], files: [], sessionIds: [], strength: 5, version: 1, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z" };
+    await kv.set("mem:memories", "mem_prev", { ...base, id: "mem_prev", title: "Deploy gate", content: "Deploys wait for the smoke suite", isLatest: true });
+    await kv.set("mem:memories", "mem_next", { ...base, id: "mem_next", title: "Deploy gate", content: "Deploys wait for the acceptance suite", isLatest: true, supersedes: ["mem_prev"], version: 2 });
+
+    await rebuildKeywordIndex(kv as never);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const idx = getSearchIndex();
+    expect(idx.has("mem_next")).toBe(true);
+    expect(idx.has("mem_prev")).toBe(false);
+    expect((await kv.get<Memory>("mem:memories", "mem_prev"))?.isLatest).toBe(false);
+    expect((await kv.get<Memory>("mem:memories", "mem_next"))?.isLatest).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const audits = [...kv.store.entries()]
+      .filter(([scope]) => scope.startsWith("mem:audit"))
+      .flatMap(([, rows]) => [...rows.values()] as Array<{ operation?: string; targetIds?: string[] }>)
+      .filter((row) => row.operation === "heal");
+    expect(audits.map((row) => row.targetIds)).toEqual([["mem_prev"]]);
+  });
+
+  it("does not bring back a memory that was forgotten while the rebuild ran", async () => {
+    const kv = mockKV();
+    const base = { type: "fact", concepts: [], files: [], sessionIds: [], strength: 5, version: 1, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z" };
+    await kv.set("mem:memories", "mem_prev", { ...base, id: "mem_prev", title: "Deploy gate", content: "Deploys wait for the smoke suite", isLatest: true });
+    await kv.set("mem:memories", "mem_next", { ...base, id: "mem_next", title: "Deploy gate", content: "Deploys wait for the acceptance suite", isLatest: true, supersedes: ["mem_prev"], version: 2 });
+    const get = kv.get;
+    kv.get = (async (scope: string, key: string) => {
+      if (scope === "mem:memories" && key === "mem_prev") kv.store.get(scope)?.delete(key);
+      return get(scope, key);
+    }) as typeof kv.get;
+
+    await rebuildKeywordIndex(kv as never);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(kv.store.get("mem:memories")?.has("mem_prev")).toBe(false);
+    expect(getSearchIndex().has("mem_prev")).toBe(false);
+  });
+
+  it("waits for the remember lock before it demotes", async () => {
+    const kv = mockKV();
+    const base = { type: "fact", concepts: [], files: [], sessionIds: [], strength: 5, version: 1, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z" };
+    await kv.set("mem:memories", "mem_prev", { ...base, id: "mem_prev", title: "Deploy gate", content: "Deploys wait for the smoke suite", isLatest: true });
+    await kv.set("mem:memories", "mem_next", { ...base, id: "mem_next", title: "Deploy gate", content: "Deploys wait for the acceptance suite", isLatest: true, supersedes: ["mem_prev"], version: 2 });
+    let release!: () => void;
+    const held = withKeyedLock("mem:remember", () => new Promise<void>((resolve) => { release = resolve; }));
+
+    await rebuildKeywordIndex(kv as never);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect((await kv.get<Memory>("mem:memories", "mem_prev"))?.isLatest).toBe(true);
+
+    kv.store.get("mem:memories")!.delete("mem_prev");
+    release();
+    await held;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(kv.store.get("mem:memories")!.has("mem_prev")).toBe(false);
+  });
+
+  it("demotes every older version of a chain, in any order", async () => {
+    const kv = mockKV();
+    const base = { type: "fact", concepts: [], files: [], sessionIds: [], strength: 5, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z", isLatest: true };
+    await kv.set("mem:memories", "mem_b", { ...base, id: "mem_b", title: "Deploy gate", content: "Deploys wait for the canary suite", supersedes: ["mem_a"], version: 2 });
+    await kv.set("mem:memories", "mem_a", { ...base, id: "mem_a", title: "Deploy gate", content: "Deploys wait for the smoke suite", version: 1 });
+    await kv.set("mem:memories", "mem_c", { ...base, id: "mem_c", title: "Deploy gate", content: "Deploys wait for the acceptance suite", supersedes: ["mem_b"], version: 3 });
+
+    await rebuildKeywordIndex(kv as never);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const idx = getSearchIndex();
+    expect([idx.has("mem_a"), idx.has("mem_b"), idx.has("mem_c")]).toEqual([false, false, true]);
+    expect((await kv.get<Memory>("mem:memories", "mem_a"))?.isLatest).toBe(false);
+    expect((await kv.get<Memory>("mem:memories", "mem_b"))?.isLatest).toBe(false);
+    expect((await kv.get<Memory>("mem:memories", "mem_c"))?.isLatest).toBe(true);
+  });
+
+  it("finds a current ancestor through a version that is no longer current", () => {
+    const memory = (id: string, isLatest: boolean, supersedes?: string[]) => ({ id, isLatest, supersedes }) as Memory;
+    expect(supersededButLatest([memory("a", true), memory("b", false, ["a"]), memory("c", true, ["b"])])).toEqual([
+      { id: "a", successorId: "c" },
+    ]);
+    expect(supersededButLatest([memory("a", true), memory("b", false, ["a"])])).toEqual([]);
+    expect(supersededButLatest([memory("a", true, ["b"]), memory("b", true, ["a"])])).toEqual([]);
+  });
+
+  it("keeps both versions searchable when two memories supersede each other", async () => {
+    const kv = mockKV();
+    const base = { type: "fact", concepts: [], files: [], sessionIds: [], strength: 5, version: 1, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z", isLatest: true };
+    await kv.set("mem:memories", "mem_a", { ...base, id: "mem_a", title: "Deploy gate", content: "Deploys wait for the smoke suite", supersedes: ["mem_b"] });
+    await kv.set("mem:memories", "mem_b", { ...base, id: "mem_b", title: "Deploy gate", content: "Deploys wait for the acceptance suite", supersedes: ["mem_a"] });
+
+    await rebuildKeywordIndex(kv as never);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(getSearchIndex().has("mem_a")).toBe(true);
+    expect(getSearchIndex().has("mem_b")).toBe(true);
+  });
+
+  it("indexes the older version again when its successor is gone before the repair runs", async () => {
+    const kv = mockKV();
+    const base = { type: "fact", concepts: [], files: [], sessionIds: [], strength: 5, version: 1, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z", isLatest: true };
+    await kv.set("mem:memories", "mem_prev", { ...base, id: "mem_prev", title: "Deploy gate", content: "Deploys wait for the smoke suite" });
+    await kv.set("mem:memories", "mem_next", { ...base, id: "mem_next", title: "Deploy gate", content: "Deploys wait for the acceptance suite", supersedes: ["mem_prev"], version: 2 });
+    let release!: () => void;
+    const held = withKeyedLock("mem:remember", () => new Promise<void>((resolve) => { release = resolve; }));
+
+    await rebuildKeywordIndex(kv as never);
+    expect(getSearchIndex().has("mem_prev")).toBe(false);
+    kv.store.get("mem:memories")!.delete("mem_next");
+    release();
+    await held;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect((await kv.get<Memory>("mem:memories", "mem_prev"))?.isLatest).toBe(true);
+    expect(getSearchIndex().has("mem_prev")).toBe(true);
+  });
+
+  it("still indexes when a stored memory has a malformed supersedes field", async () => {
+    const kv = mockKV();
+    const base = { type: "fact", concepts: [], files: [], sessionIds: [], strength: 5, version: 1, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z", isLatest: true };
+    await kv.set("mem:memories", "mem_bad", { ...base, id: "mem_bad", title: "Restored note", content: "Restored from an old export", supersedes: { id: "mem_gone" } });
+    await kv.set("mem:memories", "mem_ok", { ...base, id: "mem_ok", title: "Deploy gate", content: "Deploys wait for the smoke suite" });
+
+    await rebuildKeywordIndex(kv as never);
+
+    expect(getSearchIndex().has("mem_bad")).toBe(true);
+    expect(getSearchIndex().has("mem_ok")).toBe(true);
   });
 
   it("rebuilds BM25 from stored observations and latest memories, quickly", async () => {
@@ -744,6 +875,30 @@ describe("keyword rebuild background retry", () => {
     expect(getSearchIndex().has("obs_3")).toBe(true);
     expect(isMemoryIndexReady()).toBe(true);
     expect(isBm25RebuildIncomplete()).toBe(false);
+  });
+
+  it("leaves an interrupted supersede out of the index when the memories listing is retried", async () => {
+    vi.useFakeTimers();
+    const kv = mockKV();
+    const base = { type: "fact", concepts: [], files: [], sessionIds: [], strength: 5, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z", isLatest: true };
+    await kv.set("mem:memories", "mem_prev", { ...base, id: "mem_prev", title: "Deploy gate", content: "Deploys wait for the smoke suite", version: 1 });
+    await kv.set("mem:memories", "mem_next", { ...base, id: "mem_next", title: "Deploy gate", content: "Deploys wait for the acceptance suite", supersedes: ["mem_prev"], version: 2 });
+    let down = true;
+    const downKv = {
+      ...kv,
+      list: async <T>(scope: string): Promise<T[]> => {
+        if (down && scope === "mem:memories") throw new Error("frame too large");
+        return kv.list<T>(scope);
+      },
+    };
+
+    await rebuildKeywordIndex(downKv as never);
+    down = false;
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(getSearchIndex().has("mem_next")).toBe(true);
+    expect(getSearchIndex().has("mem_prev")).toBe(false);
+    expect((await kv.get<Memory>("mem:memories", "mem_prev"))?.isLatest).toBe(false);
   });
 });
 

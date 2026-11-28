@@ -218,6 +218,24 @@ describe("Export/Import Functions", () => {
     expect(memHit.some((r) => r.obsId === "mem_imported")).toBe(true);
   });
 
+  it("rejects an import that repeats a memory id before any write", async () => {
+    const exportData: ExportData = {
+      version: "0.3.0",
+      exportedAt: new Date().toISOString(),
+      sessions: [],
+      observations: {},
+      memories: [testMemory, { ...testMemory, isLatest: false }],
+      summaries: [],
+    };
+
+    const before = JSON.stringify(await kv.list("mem:memories"));
+    const result = (await sdk.trigger("mem::import", { exportData, strategy: "merge" })) as { success: boolean; error?: string };
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe(`Duplicate memory id in import: ${testMemory.id}`);
+    expect(JSON.stringify(await kv.list("mem:memories"))).toBe(before);
+  });
+
   it("import with skip strategy does not overwrite existing", async () => {
     const exportData: ExportData = {
       version: "0.3.0",

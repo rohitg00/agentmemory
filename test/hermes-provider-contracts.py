@@ -363,6 +363,13 @@ class ProviderContract(unittest.TestCase):
             self.assertEqual(result['errorCode'], 'authentication')
             self.assertNotIn('results', result)
 
+    def test_native_search_tools_exclude_lessons_without_author_scope(self):
+        provider = self.provider()
+        for name in ('memory_search', 'memory_recall'):
+            provider.handle_tool_call(name, {'query': 'deploy', 'includeLessons': True})
+            self.assertEqual(self.calls[-1][2]['query'], 'deploy')
+            self.assertIs(self.calls[-1][2]['includeLessons'], False)
+
     def test_switch_orders_end_start_turn_and_end_uses_new_session(self):
         provider = self.provider()
         provider.sync_turn('first', 'response')

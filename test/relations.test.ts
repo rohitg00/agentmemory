@@ -155,6 +155,22 @@ describe("Relations Functions", () => {
       expect(old!.updatedAt).not.toBe("2020-01-01T00:00:00.000Z");
     });
 
+    it("keeps the old version latest when the new version cannot be written", async () => {
+      await kv.set("mem:memories", "mem_old", makeMemory({ id: "mem_old" }));
+      const set = kv.set;
+      kv.set = (async (scope: string, key: string, data: unknown) => {
+        if (scope === "mem:memories" && key !== "mem_old") throw new Error("state write failed");
+        return set(scope, key, data);
+      }) as typeof kv.set;
+
+      await expect(
+        sdk.trigger("mem::evolve", { memoryId: "mem_old", newContent: "Updated content" }),
+      ).rejects.toThrow("state write failed");
+
+      expect((await kv.get<Memory>("mem:memories", "mem_old"))!.isLatest).toBe(true);
+      expect(await kv.list("mem:memories")).toHaveLength(1);
+    });
+
     it("returns error when memory not found", async () => {
       const result = await sdk.trigger("mem::evolve", {
         memoryId: "mem_missing",
