@@ -1084,6 +1084,7 @@ export const ESSENTIAL_TOOLS = new Set([
   "memory_sessions",
   "memory_diagnose",
   "memory_lesson_save",
+  "memory_lesson_recall",
   "memory_reflect",
 ]);
 

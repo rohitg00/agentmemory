@@ -107,9 +107,9 @@ Hook scripts in `src/hooks/` are standalone Node.js scripts (no iii-sdk import).
 - Test files go in `test/` with `.test.ts` extension
 - Follow existing patterns in `test/crystallize.test.ts` for function tests
 
-## Current Stats (v0.9.33)
+## Current Stats (v0.9.34)
 
-- 54 MCP tools visible by default; `AGENTMEMORY_TOOLS=core` selects 8 essentials
+- 54 MCP tools visible by default; `AGENTMEMORY_TOOLS=core` selects 9 essentials
 - 148 REST endpoints
 - 6 MCP resources, 3 MCP prompts
 - 12 hooks, 17 skills

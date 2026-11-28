@@ -150,7 +150,7 @@ describe("Worker Compose project", () => {
     const { getVisibleTools } = await import("../src/mcp/tools-registry.js");
     const previous = process.env.AGENTMEMORY_TOOLS;
     process.env.AGENTMEMORY_TOOLS = app.environment.AGENTMEMORY_TOOLS;
-    try { expect(getVisibleTools()).toHaveLength(8); }
+    try { expect(getVisibleTools()).toHaveLength(9); }
     finally { if (previous === undefined) delete process.env.AGENTMEMORY_TOOLS; else process.env.AGENTMEMORY_TOOLS = previous; }
   });
 

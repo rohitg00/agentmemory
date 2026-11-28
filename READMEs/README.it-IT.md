@@ -857,7 +857,7 @@ L'installazione npm normale include il runtime opzionale `@huggingface/transform
 
 ### 54 strumenti
 
-Tre superfici di strumenti, dalla più piccola alla più grande: `AGENTMEMORY_TOOLS=core` riduce la visibilità a 8 strumenti essenziali (`memory_save`, `memory_recall`, `memory_consolidate`, `memory_smart_search`, `memory_sessions`, `memory_diagnose`, `memory_lesson_save`, `memory_reflect`); il set base sotto è composto dai 14 strumenti fondamentali del registro; il predefinito (`AGENTMEMORY_TOOLS=all`) espone tutti i 54.
+Tre superfici di strumenti, dalla più piccola alla più grande: `AGENTMEMORY_TOOLS=core` riduce la visibilità a 9 strumenti essenziali (`memory_save`, `memory_recall`, `memory_consolidate`, `memory_smart_search`, `memory_sessions`, `memory_diagnose`, `memory_lesson_save`, `memory_reflect`); il set base sotto è composto dai 14 strumenti fondamentali del registro; il predefinito (`AGENTMEMORY_TOOLS=all`) espone tutti i 54.
 
 <details>
 <summary>Strumenti base (14)</summary>

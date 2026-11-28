@@ -1,11 +1,11 @@
 {
-  "version": "0.9.33",
+  "version": "0.9.34",
   "facts": {
     "mcpTools": [
       "54"
     ],
     "coreTools": [
-      "8"
+      "9"
     ],
     "fallbackTools": [
       "7"

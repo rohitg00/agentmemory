@@ -852,7 +852,7 @@ EMBEDDING_PROVIDER=local
 
 ### 54 أداة
 
-ثلاث واجهات للأدوات، من الأصغر إلى الأكبر: يُقلِّص `AGENTMEMORY_TOOLS=core` مجموعة الأدوات الظاهرة إلى 8 أدوات أساسية (`memory_save` و`memory_recall` و`memory_consolidate` و`memory_smart_search` و`memory_sessions` و`memory_diagnose` و`memory_lesson_save` و`memory_reflect`)؛ وتمثل المجموعة الأساسية أدناه الأدوات التأسيسية الـ14 في السجل؛ أما الوضع الافتراضي (`AGENTMEMORY_TOOLS=all`) فيعرض جميع الأدوات الـ54.
+ثلاث واجهات للأدوات، من الأصغر إلى الأكبر: يُقلِّص `AGENTMEMORY_TOOLS=core` مجموعة الأدوات الظاهرة إلى 9 أدوات أساسية (`memory_save` و`memory_recall` و`memory_consolidate` و`memory_smart_search` و`memory_sessions` و`memory_diagnose` و`memory_lesson_save` و`memory_reflect`)؛ وتمثل المجموعة الأساسية أدناه الأدوات التأسيسية الـ14 في السجل؛ أما الوضع الافتراضي (`AGENTMEMORY_TOOLS=all`) فيعرض جميع الأدوات الـ54.
 
 <details>
 <summary>الأدوات الأساسية (14)</summary>

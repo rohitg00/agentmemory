@@ -857,7 +857,7 @@ Lần cài npm thông thường đã bao gồm runtime tùy chọn `@huggingface
 
 ### 54 Tool
 
-Ba mức hiển thị tool, từ nhỏ tới lớn: `AGENTMEMORY_TOOLS=core` thu hẹp hiển thị xuống 8 tool thiết yếu (`memory_save`, `memory_recall`, `memory_consolidate`, `memory_smart_search`, `memory_sessions`, `memory_diagnose`, `memory_lesson_save`, `memory_reflect`); bộ cơ bản dưới đây là 14 tool nền tảng của registry; mặc định (`AGENTMEMORY_TOOLS=all`) phơi ra toàn bộ 54 tool.
+Ba mức hiển thị tool, từ nhỏ tới lớn: `AGENTMEMORY_TOOLS=core` thu hẹp hiển thị xuống 9 tool thiết yếu (`memory_save`, `memory_recall`, `memory_consolidate`, `memory_smart_search`, `memory_sessions`, `memory_diagnose`, `memory_lesson_save`, `memory_reflect`); bộ cơ bản dưới đây là 14 tool nền tảng của registry; mặc định (`AGENTMEMORY_TOOLS=all`) phơi ra toàn bộ 54 tool.
 
 <details>
 <summary>Tool cơ bản (14)</summary>
