@@ -3,83 +3,57 @@ import type { CSSProperties } from "react";
 import { Reveal } from "./client";
 import s from "./InfraTiles.module.css";
 
-function Gauge() {
-  const r = 120;
-  const cx = 150;
-  const cy = 150;
-  const arc = (from: number, to: number) => {
-    const a0 = Math.PI * (1 - from);
-    const a1 = Math.PI * (1 - to);
-    const x0 = cx + r * Math.cos(a0);
-    const y0 = cy - r * Math.sin(a0);
-    const x1 = cx + r * Math.cos(a1);
-    const y1 = cy - r * Math.sin(a1);
-    return `M${x0.toFixed(1)} ${y0.toFixed(1)} A${r} ${r} 0 0 1 ${x1.toFixed(1)} ${y1.toFixed(1)}`;
-  };
-  const ticks = Array.from({ length: 11 }, (_, i) => i / 10);
+const HITS = [
+  { title: "Rotate refresh tokens on every use", layer: "memory", score: "0.91" },
+  { title: "Edit src/auth/refresh.ts", layer: "observation", score: "0.84" },
+  { title: "Refresh fails after a clock skew", layer: "lesson", score: "0.77" },
+  { title: "Run auth tests before pushing", layer: "memory", score: "0.62" },
+];
+
+function Results() {
   return (
-    <svg viewBox="0 0 300 170" className={s.gauge} aria-hidden="true">
-      <path d={arc(0, 1)} className={s.track} />
-      {ticks.map((t) => {
-        const a = Math.PI * (1 - t);
-        const x0 = cx + (r - 8) * Math.cos(a);
-        const y0 = cy - (r - 8) * Math.sin(a);
-        const x1 = cx + (r - 16) * Math.cos(a);
-        const y1 = cy - (r - 16) * Math.sin(a);
-        return <line key={t} x1={x0} y1={y0} x2={x1} y2={y1} className={s.tick} />;
-      })}
-      <path d={arc(0, 0.28)} className={s.fill} pathLength={1} />
-      <text x="150" y="128" textAnchor="middle" className={s.readout}>
-        Local
-      </text>
-      <text x="30" y="166" className={s.scale}>
-        BM25
-      </text>
-      <text x="270" y="166" className={s.scale} textAnchor="end">
-        vectors
-      </text>
-    </svg>
+    <div className={s.panel} aria-hidden="true">
+      <div className={s.panelHead}>
+        <span className="mono">memory_smart_search</span>
+        <span className="mono">BM25 · no key</span>
+      </div>
+      <div className={`mono ${s.query}`}>auth refresh</div>
+      <ol className={s.hits}>
+        {HITS.map((hit, i) => (
+          <li key={hit.title} className={s.hit} style={{ "--rd": `${250 + i * 70}ms` } as CSSProperties}>
+            <span className={s.hitTitle}>{hit.title}</span>
+            <span className={`mono ${s.hitLayer}`}>{hit.layer}</span>
+            <span className={`mono ${s.hitScore}`}>{hit.score}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
 
-function Isometric() {
-  const iso = (x: number, y: number, z: number) => {
-    const px = 150 + (x - y) * 0.866;
-    const py = 120 + (x + y) * 0.5 - z;
-    return `${px.toFixed(1)},${py.toFixed(1)}`;
-  };
-  const cube = (x: number, y: number, z: number, w: number, d: number, h: number) => ({
-    top: [iso(x, y, z + h), iso(x + w, y, z + h), iso(x + w, y + d, z + h), iso(x, y + d, z + h)].join(" "),
-    left: [iso(x, y + d, z), iso(x + w, y + d, z), iso(x + w, y + d, z + h), iso(x, y + d, z + h)].join(" "),
-    right: [iso(x + w, y, z), iso(x + w, y + d, z), iso(x + w, y + d, z + h), iso(x + w, y, z + h)].join(" "),
-  });
-  const outer = cube(-70, -70, -40, 140, 140, 120);
-  const inner = cube(-28, -28, 0, 56, 56, 46);
-  const drops = [
-    [-28, -28],
-    [28, -28],
-    [-28, 28],
-    [28, 28],
-  ];
+const REQUESTS = [
+  { line: "POST 127.0.0.1:3111/agentmemory/mcp", status: "401", note: "no token", ok: false },
+  { line: "POST 127.0.0.1:3111/agentmemory/mcp", status: "200", note: "Bearer secret", ok: true },
+  { line: "POST .../mcp  Origin: evil.example", status: "403", note: "origin not allowed", ok: false },
+];
+
+function Boundary() {
   return (
-    <svg viewBox="0 0 300 250" className={s.iso} aria-hidden="true">
-      <polygon points={outer.left} className={s.ghost} />
-      <polygon points={outer.right} className={s.ghost} />
-      <polygon points={outer.top} className={s.ghost} />
-      {drops.map(([x, y]) => {
-        const [x1, y1] = iso(x, y, 0).split(",");
-        const [x2, y2] = iso(x, y, -40).split(",");
-        return <line key={`${x}${y}`} x1={x1} y1={y1} x2={x2} y2={y2} className={s.drop} />;
-      })}
-      <g className={s.float}>
-        <polygon points={inner.left} className={s.faceL} />
-        <polygon points={inner.right} className={s.faceR} />
-        <polygon points={inner.top} className={s.faceT} />
-      </g>
-      <text x="150" y="238" textAnchor="middle" className={s.isoLabel}>
-        127.0.0.1 · your machine
-      </text>
-    </svg>
+    <div className={s.panel} aria-hidden="true">
+      <div className={s.panelHead}>
+        <span className="mono">bind 127.0.0.1</span>
+        <span className="mono">auth on</span>
+      </div>
+      <ul className={s.reqs}>
+        {REQUESTS.map((req, i) => (
+          <li key={i} className={s.req} style={{ "--rd": `${250 + i * 90}ms` } as CSSProperties}>
+            <span className={`mono ${s.reqLine}`}>{req.line}</span>
+            <span className={`mono ${req.ok ? s.reqOk : s.reqNo}`}>{req.status}</span>
+            <span className={`mono ${s.reqNote}`}>{req.note}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -114,11 +88,8 @@ export function InfraTiles() {
           <h3 className="mono">Keyless recall</h3>
           <p>Keyword search works without an API key. Enable local embeddings to add semantic retrieval.</p>
           <div className={s.art}>
-            <Gauge />
+            <Results />
           </div>
-          <code className={s.call}>
-            memory_smart_search(&quot;auth refresh&quot;)<span className={s.caret} />
-          </code>
           <a className="src" href="/benchmarks" target="_blank" rel="noreferrer">
             retrieval evaluation
           </a>
@@ -127,7 +98,7 @@ export function InfraTiles() {
           <h3 className="mono">Isolated on your machine</h3>
           <p>Binds to 127.0.0.1 with auth on by default. Memory text stays local unless you configure a remote service.</p>
           <div className={s.art}>
-            <Isometric />
+            <Boundary />
           </div>
           <a className="src" href="/security">
             security model
