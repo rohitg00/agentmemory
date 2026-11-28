@@ -10,6 +10,7 @@ Items shift as evidence changes. Each quarter we publish a short retrospective o
 - **Active** — in-flight, has an open PR or issue owner.
 - **Planned** — accepted scope for the quarter, not started.
 - **Candidate** — under consideration, may defer.
+- **Still open** — planned for a past quarter and not shipped yet; still on the roadmap.
 
 Anything not on this list that a contributor wants to pursue is welcome — open an issue labeled `roadmap` and it gets triaged against the quarterly theme.
 
@@ -22,7 +23,7 @@ Anything not on this list that a contributor wants to pursue is welcome — open
 
 ## Q2 2026 — Depth (April – June)
 
-### Shipped so far in this quarter
+### Shipped
 - [x] iii console docs in README with vendored screenshots (#157)
 - [x] Health severity gated on RSS floor (#158 / PR #160)
 - [x] Standalone MCP proxies to the running server (#159 / PR #161)
@@ -30,20 +31,18 @@ Anything not on this list that a contributor wants to pursue is welcome — open
 - [x] `@agentmemory/fs-watcher` filesystem connector (#62 / PR #163)
 - [x] Next.js website on Vercel (PR #164)
 - [x] CI publishes all three npm packages on release (PR #166)
+- [x] **Multimodal memory** — content-addressed image store, vision-prompt compression, disk quota + refcount on eviction (#64, PR #111). Shipped in v0.9.2.
+- [x] **Governance baseline** — this file, plus `GOVERNANCE.md`, `CONTRIBUTING.md`, `MAINTAINERS.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md` (PR #168). Shipped in v0.9.1.
+- [x] **OpenCode hook bus** (#156) — wired 22 hooks covering all 12 Claude Code hook types: session lifecycle (create/idle/status/compacted/update/diff/delete/error), messages & prompts (chat.message, message.updated user+assistant, message.removed), tool capture (before + rich ToolPart lifecycle in message.part.updated), memory injection (context + enrich via system.transform), part tracking (subtask, step-finish, reasoning, file, patch, compaction, agent, retry), file enrichment pipeline (stash via tool.execute.before + file.edited + file parts), permissions (updated + replied), task tracking (todo.updated w/ priority), commands (command.executed), config & model tracking (config + chat.params). Plus 2 slash commands (recall/remember). See `plugin/opencode/`. Shipped in v0.9.21.
+- [x] **Session replay UI** in the real-time viewer — scrub the timeline, inspect per-observation payloads. Shipped in v0.9.0.
 
-### Active
-- [ ] **Multimodal memory** — content-addressed image store, vision-prompt compression, disk quota + refcount on eviction (#64, PR #111)
-- [ ] **Governance baseline** — this file, plus `GOVERNANCE.md`, `CONTRIBUTING.md`, `MAINTAINERS.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`
-
-### Planned
+### Still open
 - [ ] **GitHub connector** (`@agentmemory/github-watcher`) — sync issues, PRs, discussions as observations. Shares the `POST /agentmemory/observe` wire format with the filesystem connector.
-- [x] **OpenCode hook bus** (#156) — wired 22 hooks covering all 12 Claude Code hook types: session lifecycle (create/idle/status/compacted/update/diff/delete/error), messages & prompts (chat.message, message.updated user+assistant, message.removed), tool capture (before + rich ToolPart lifecycle in message.part.updated), memory injection (context + enrich via system.transform), part tracking (subtask, step-finish, reasoning, file, patch, compaction, agent, retry), file enrichment pipeline (stash via tool.execute.before + file.edited + file parts), permissions (updated + replied), task tracking (todo.updated w/ priority), commands (command.executed), config & model tracking (config + chat.params). Plus 2 slash commands (recall/remember). See `plugin/opencode/`.
-- [ ] **Session replay UI** in the real-time viewer — scrub the timeline, inspect per-observation payloads.
 - [ ] **Benchmark harness in CI** — keep the 95.2% R@5 number honest across releases by re-running LongMemEval-S on every minor tag.
 
 ## Q3 2026 — Breadth (July – September)
 
-### Planned
+### Still open
 - [ ] **Additional maintainer onboarding** — at least one Maintainer from a different organization added via the process in `GOVERNANCE.md`. This is a prerequisite for advancing past the foundation's Growth Stage.
 - [ ] **Slack / Discord connector** — third source in the connector family.
 - [ ] **OpenSSF Scorecard** — enroll, reach a Silver-equivalent score. Badged in the README.
@@ -54,7 +53,7 @@ Anything not on this list that a contributor wants to pursue is welcome — open
 ### Candidate
 - Cross-agent shared memory namespace. Currently each agent installs its own instance. This would let a Claude Code session and a Cursor session recall each other's observations via a shared mesh node.
 
-## Q4 2026 — Trust (October – December)
+## Q4 2026 — Trust (October – December), current quarter
 
 ### Planned
 - [ ] **SSO gateway** — accept OIDC in front of the REST surface for team deployments.
