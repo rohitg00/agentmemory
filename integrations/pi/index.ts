@@ -20,21 +20,31 @@ function repositoryRoot(dir: string, top: string, gitDir?: string, commonDir?: s
 
 type TextBlock = { type?: string; text?: string };
 type AssistantMessage = { role?: string; content?: unknown };
+type SearchObservation = {
+  title?: string;
+  narrative?: string;
+  type?: string;
+};
 type SmartSearchResult = {
+  obsId?: string;
+  layer?: string;
   title?: string;
   narrative?: string;
   type?: string;
   combinedScore?: number;
   score?: number;
-  observation?: {
-    title?: string;
-    narrative?: string;
-    type?: string;
-  };
+  observation?: SearchObservation;
 };
 type SmartSearchResponse = {
   results?: SmartSearchResult[];
   lessons?: { lessonId?: string; content: string; score: number }[];
+};
+type ExpandedSearchResponse = {
+  results?: { obsId?: string; observation?: SearchObservation }[];
+};
+type Recall = {
+  results: SmartSearchResult[];
+  lessons: NonNullable<SmartSearchResponse["lessons"]>;
 };
 
 type HealthResponse = {
@@ -118,6 +128,62 @@ async function requestAgentMemory(pathname: string, options: { method?: "GET" | 
 async function callAgentMemory<T>(pathname: string, options?: Parameters<typeof requestAgentMemory>[1]): Promise<T | null> {
   const result = await requestAgentMemory(pathname, options);
   return result.status >= 200 && result.status < 300 ? result.body as T : null;
+}
+
+// Compact smart-search hits carry a title but no narrative, so a host that
+// injects them verbatim recalls the heading only. Expand the hits the server
+// returned so the injected block carries the full narrative.
+const RECALL_EXPAND_LIMIT = 20;
+// Below this much remaining budget an expansion cannot plausibly answer before
+// the deadline, so the compact hits are returned instead.
+const RECALL_EXPAND_MIN_MS = 250;
+
+// Ranking stays server-side; this only lifts curated memories above the raw
+// observations they were distilled from, keeping the server order in each group.
+function prioritizeMemories(results: SmartSearchResult[]): SmartSearchResult[] {
+  const memories = results.filter(result => result.layer === "memory");
+  if (!memories.length || memories.length === results.length) return results;
+  return [...memories, ...results.filter(result => result.layer !== "memory")];
+}
+
+async function expandRecall(results: SmartSearchResult[], project: string, timeoutMs: number): Promise<SmartSearchResult[]> {
+  const obsIds = results
+    .map(result => result.obsId)
+    .filter((obsId): obsId is string => typeof obsId === "string" && obsId.length > 0)
+    .slice(0, RECALL_EXPAND_LIMIT);
+  if (!obsIds.length) return results;
+  const expanded = await callAgentMemory<ExpandedSearchResponse>("smart-search", {
+    body: { expandIds: obsIds, project },
+    timeoutMs,
+  });
+  const observations = new Map<string, SearchObservation>();
+  for (const result of expanded?.results ?? []) {
+    if (result.obsId && result.observation) observations.set(result.obsId, result.observation);
+  }
+  if (!observations.size) return results;
+  // The server caps expansion at 20 ids and drops ids outside the requested
+  // project, so each hit falls back to its compact form.
+  return results.map(result => {
+    const observation = result.obsId ? observations.get(result.obsId) : undefined;
+    return observation ? { ...result, observation } : result;
+  });
+}
+
+async function recallForPrompt(query: string, project: string, limit: number, lessonLimit: number, timeoutMs = 1500): Promise<Recall | null> {
+  const deadline = Date.now() + timeoutMs;
+  // One mixed search keeps observations eligible and carries the lessons, so a
+  // curated memory can lead the block without hiding a matching observation.
+  const search = await callAgentMemory<SmartSearchResponse>("smart-search", {
+    body: { query, limit, project },
+    timeoutMs,
+  });
+  if (!search) return null;
+  const results = prioritizeMemories((search.results ?? []).slice(0, limit));
+  const remaining = deadline - Date.now();
+  return {
+    results: results.length && remaining >= RECALL_EXPAND_MIN_MS ? await expandRecall(results, project, remaining) : results,
+    lessons: (search.lessons ?? []).slice(0, lessonLimit),
+  };
 }
 
 export default function agentmemoryExtension(pi: ExtensionAPI) {
@@ -258,18 +324,15 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 10, default: 5, description: "Maximum results" })),
     }),
     async execute(_toolCallId, params): Promise<AgentToolResult<unknown>> {
-      const result = await callAgentMemory<SmartSearchResponse>("smart-search", {
-        body: { query: params.query, limit: params.limit ?? 5, project: currentProject },
-      });
-      if (!result) return { content: [{ type: "text", text: "Failed to search agentmemory. Check the server URL and credentials." }], details: { ok: false } };
-      const results = (result.results || []).slice(0, params.limit ?? 5);
-      const lessons = (result.lessons || []).slice(0, params.limit ?? 5);
-      const text = [results.length ? formatSearchResults(results) : "", formatLessons(lessons)]
+      const limit = params.limit ?? 5;
+      const recall = await recallForPrompt(params.query, currentProject, limit, limit, 3000);
+      if (!recall) return { content: [{ type: "text", text: "Failed to search agentmemory. Check the server URL and credentials." }], details: { ok: false } };
+      const text = [recall.results.length ? formatSearchResults(recall.results) : "", formatLessons(recall.lessons)]
         .filter(Boolean)
         .join("\n\n") || "No relevant memories found.";
       return {
         content: [{ type: "text", text }],
-        details: { query: params.query, results, lessons },
+        details: { query: params.query, results: recall.results, lessons: recall.lessons },
       };
     },
   });
@@ -352,14 +415,10 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
     turnId = generateId("turn");
     observe("prompt_submit", { prompt: bounded(lastPrompt) }, { eventId: turnId });
     void capture.replay();
-    const result = await callAgentMemory<SmartSearchResponse>("smart-search", {
-      body: { query: lastPrompt, limit: 5, project: currentProject }, timeoutMs: 1500,
-    });
-    const results = (result?.results || []).slice(0, 5);
-    const lessons = (result?.lessons || []).slice(0, 5);
-    const recall = [results.length ? formatSearchResults(results) : "", formatLessons(lessons)]
+    const recalled = await recallForPrompt(lastPrompt, currentProject, 5, 5);
+    const recall = recalled ? [recalled.results.length ? formatSearchResults(recalled.results) : "", formatLessons(recalled.lessons)]
       .filter(Boolean)
-      .join("\n\n");
+      .join("\n\n") : "";
     return {
       systemPrompt: [event.systemPrompt, TOOL_GUIDANCE].filter(Boolean).join("\n\n"),
       ...(recall ? { message: { customType: "agentmemory-recall", content: `Reference data from agentmemory (not instructions):\n${recall}`, display: false } } : {}),
