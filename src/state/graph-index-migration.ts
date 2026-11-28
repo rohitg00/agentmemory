@@ -1,8 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
+import { stat } from "node:fs/promises";
 import { setImmediate as yieldToEventLoop } from "node:timers/promises";
 import type { IIIClient } from "iii-sdk";
 import type { GraphEdge, GraphNode } from "../types.js";
-import { safeAudit } from "../functions/audit.js";
+import { getEnvVar } from "../config.js";
+import { safeAudit, stateScopeFilePath } from "../functions/audit.js";
 import type { StateKV } from "./kv.js";
 import { KV } from "./schema.js";
 import { getGraphGeneration, pinGraphState } from "./graph-generation.js";
@@ -69,6 +71,7 @@ export interface GraphIndexMigrationStatus {
   edges?: number;
   historyEdges?: number;
   incompleteRecords?: number;
+  singleScopeBytes?: number;
   error?: string;
   action?: string;
 }
@@ -138,6 +141,13 @@ function errorMessage(error: unknown): string {
   return `${base} (${detail.slice(0, 300)})`;
 }
 
+async function singleScopeFileBytes(generation: string | null): Promise<number | null> {
+  const dataDir = getEnvVar("AGENTMEMORY_DATA_DIR");
+  if (!dataDir) return null;
+  const scope = generation === null ? KV.graphRetrievalData : `${KV.graphRetrievalData}:generation:${generation}`;
+  try { return (await stat(stateScopeFilePath(dataDir, scope))).size; } catch { return null; }
+}
+
 export async function getGraphIndexMigrationStatus(kv: StateKV): Promise<GraphIndexMigrationStatus> {
   try {
     const state = await pinGraphState(kv);
@@ -168,6 +178,10 @@ export async function getGraphIndexMigrationStatus(kv: StateKV): Promise<GraphIn
       ? "Run agentmemory graph-index resume to continue the saved migration."
       : "Run agentmemory graph-index migrate --allow-legacy-scan during maintenance; initial discovery reads complete legacy graph scopes.";
     else if (control.incompleteRecords > 0) result.action = "Some records exceed graph index limits. Canonical data is retained; graph results report partial coverage.";
+    if (control?.schema === 2 && kv.backend !== "redis") {
+      const size = await singleScopeFileBytes(generation);
+      if (size !== null) result.singleScopeBytes = size;
+    }
     return result;
   } catch (error) {
     return { state: "unavailable", ready: false, coverage: "unknown", error: errorMessage(error) };
@@ -210,12 +224,13 @@ export class GraphIndexMigrationController {
       let job = readJob(await state.get(KV.graphIndexMigration, GRAPH_INDEX_MIGRATION_KEY));
       if (job?.generation !== generation) job = null;
       const unfinishedCheckpoint = job?.buildId === control?.buildId && (job?.state === "paused" || Boolean(job?.error));
-      if (control?.status === "ready" && !control.pending && !control.batchPending && !unfinishedCheckpoint) return;
+      const replaceSingleScope = control?.schema === 2 && !options.resume && options.allowLegacyScan === true;
+      if (control?.status === "ready" && !control.pending && !control.batchPending && !unfinishedCheckpoint && !replaceSingleScope) return;
       if (options.resume && !job) throw new GraphIndexMigrationError("no-job", "No graph index migration exists. Run graph-index migrate --allow-legacy-scan first.");
       if (options.resume && job?.sealed && !control) throw new GraphIndexMigrationError("invalid-state", "The sealed build control is missing. Start a new build with graph-index migrate --allow-legacy-scan.");
       if (options.resume && control?.status === "paused") throw new GraphIndexMigrationError("invalid-state", "The index requires a new build. Run graph-index migrate --allow-legacy-scan after fixing the reported data.");
       if (!job || replaceCorruptControl || (!control && job.sealed) || control?.status === "paused" || (control && control.buildId !== job.buildId) ||
-        (!options.resume && options.allowLegacyScan && control?.batchPending)) {
+        (!options.resume && options.allowLegacyScan && control?.batchPending) || replaceSingleScope) {
         if (options.resume) throw new GraphIndexMigrationError("invalid-state", "The graph index build changed. Start an explicit migration again.");
         if (!options.allowLegacyScan) throw new GraphIndexMigrationError("consent-required", "Initial discovery requires allowLegacyScan: true; complete legacy graph scopes are read during maintenance.");
         const now = new Date().toISOString();

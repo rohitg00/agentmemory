@@ -153,6 +153,7 @@ function isFailing(m: FunctionMetricInput & { offWithoutLlm: boolean }): boolean
 }
 const FAILURE_MIN_CALLS = 5;
 const GRAPH_SNAPSHOT_STALE_SECONDS = 24 * 60 * 60;
+const STATE_SCOPE_SAVE_LIMIT_BYTES = 2 ** 30;
 const LEVEL_RANK: Record<StatusLevel, number> = { ok: 0, info: 1, warn: 2, error: 3 };
 
 const FUNCTION_FIXES: Record<string, string> = {
@@ -471,6 +472,20 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     });
   } else if (graphIndex?.coverage === "partial") {
     problems.push({ level: "warn", code: "graph-index-partial", message: `${graphIndex.incompleteRecords ?? "Some"} graph records exceed index limits; graph retrieval has partial coverage.`, fix: graphIndex.action });
+  }
+
+  const singleScopeBytes = graphIndex?.singleScopeBytes;
+  if (typeof singleScopeBytes === "number" && singleScopeBytes >= STATE_SCOPE_SAVE_LIMIT_BYTES / 2) {
+    const atLimit = singleScopeBytes >= STATE_SCOPE_SAVE_LIMIT_BYTES * 0.95;
+    const size = `${Math.round(singleScopeBytes / (1024 * 1024))} MiB`;
+    problems.push({
+      level: atLimit ? "error" : "warn",
+      code: "graph-index-scope-limit",
+      message: atLimit
+        ? `The graph index data file is ${size}. The state worker cannot save one scope past 1 GiB, so newer graph index changes are lost on restart and each failed save rewrites the whole scope.`
+        : `The graph index data file is ${size} and grows with the graph. The state worker cannot save one scope past 1 GiB.`,
+      fix: "Run agentmemory graph-index migrate --allow-legacy-scan during maintenance. It rebuilds the index across smaller scopes.",
+    });
   }
 
   const compaction = input.graphCompaction ?? null;

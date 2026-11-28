@@ -33,8 +33,12 @@ function encodeStateIndexSegment(index: string): string {
   return out;
 }
 
+export function stateScopeFilePath(dataDir: string, scope: string): string {
+  return join(dataDir, STATE_STORE_DIR_NAME, `${encodeStateIndexSegment(scope)}.bin`);
+}
+
 function legacyAuditStateFilePath(dataDir: string): string {
-  return join(dataDir, STATE_STORE_DIR_NAME, `${encodeStateIndexSegment(KV.audit)}.bin`);
+  return stateScopeFilePath(dataDir, KV.audit);
 }
 
 export type LegacyAuditProbe =

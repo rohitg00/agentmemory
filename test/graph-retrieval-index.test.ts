@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { StateKV, applyUpdateOps, type StateBackend } from "../src/state/kv.js";
 import { KV } from "../src/state/schema.js";
 import { pinGraphState, resetGraphGeneration, setGraphGenerationListener } from "../src/state/graph-generation.js";
-import { createGraphIndexReader, finishGraphIndexBuild, getGraphIndexStatus, initializeGraphIndex, reconcileGraphIndexRecord, recoverGraphIndex } from "../src/state/graph-retrieval-index.js";
+import { GRAPH_INDEX_DATA_SHARDS, createGraphIndexReader, finishGraphIndexBuild, getGraphIndexStatus, graphIndexDataShard, initializeGraphIndex, reconcileGraphIndexRecord, recoverGraphIndex } from "../src/state/graph-retrieval-index.js";
 import { withKeyedLock } from "../src/state/keyed-mutex.js";
 import type { GraphNode } from "../src/types.js";
 
@@ -89,7 +89,7 @@ describe("bounded graph retrieval index", () => {
     const f = fixture(); await initializeGraphIndex(f.kv, { status: "ready" });
     await f.kv.set(KV.graphNodes, "a", node("a", "same"));
     let writes = 0;
-    f.fail((c, done) => { if (done && c.function_id === "state::set" && c.payload.scope === KV.graphRetrievalData && ++writes === 4) throw new Error("lost ack"); });
+    f.fail((c, done) => { if (done && c.function_id === "state::set" && c.payload.scope.startsWith(KV.graphRetrievalData) && ++writes === 4) throw new Error("lost ack"); });
     await expect(f.kv.set(KV.graphNodes, "b", node("b", "same"))).rejects.toThrow("lost ack");
     f.fail(); await recoverGraphIndex(new StateKV(f.sdk as never));
     const reader = (await createGraphIndexReader(f.kv))!;
@@ -127,7 +127,7 @@ describe("bounded graph retrieval index", () => {
     expect(reader.status.incompleteRecords).toBe(1);
     for (let i = 0; i < 20; i++) await reader.getNode(`absent-${i}`);
     expect(reader.exhausted).toBe(true);
-    expect(calls.filter((c) => c.payload.scope === KV.graphRetrievalData)).toHaveLength(4);
+    expect(calls.filter((c) => c.payload.scope.startsWith(KV.graphRetrievalData))).toHaveLength(4);
     expect(await reader.finish()).toBe(true);
     expect(calls).toHaveLength(8);
     expect(calls.every((c) => c.function_id === "state::get" && ![KV.graphNodes, KV.graphEdges, KV.graphSnapshot].includes(c.payload.scope))).toBe(true);
@@ -214,7 +214,7 @@ describe("bounded graph retrieval index", () => {
     if (kind === "nodes") await kv.set(KV.graphNodes, "a", node("a"));
     else await kv.set(kind === "edges" ? KV.graphEdges : KV.graphEdgeHistory, edge.id, edge);
     const posting = createHash("sha256").update(JSON.stringify(`${kind}\0`)).digest("hex");
-    const key = `${KV.graphRetrievalData}\0${control.buildId}:root:${posting}`;
+    const key = `${graphIndexDataShard(parseInt(posting.slice(-2), 16) % GRAPH_INDEX_DATA_SHARDS)}\0${control.buildId}:root:${posting}`;
     const root = data.get(key) as { head: string; count: number };
     expect(root.count).toBe(1);
     data.delete(key);
@@ -271,7 +271,7 @@ describe("bounded graph retrieval index", () => {
       sourceObservationIds: Array.from({ length: 128 }, (_, i) => `${i}-${"a".repeat(1000)}`), properties: { value: "p".repeat(500) } };
     await kv.set(KV.graphNodes, source.id, source);
     expect(await kv.get(KV.graphNodes, source.id)).toEqual(source);
-    for (const [key, value] of data) if (key.startsWith(`${KV.graphRetrievalData}\0`)) expect(Buffer.byteLength(JSON.stringify(value))).toBeLessThanOrEqual(32768);
+    for (const [key, value] of data) if (key.startsWith(KV.graphRetrievalData)) expect(Buffer.byteLength(JSON.stringify(value))).toBeLessThanOrEqual(32768);
     const reader = (await createGraphIndexReader(kv))!;
     expect(await reader.getNode(source.id)).toMatchObject({ indexIncomplete: true });
     expect(await reader.finish()).toBe(true);
@@ -367,5 +367,49 @@ describe("bounded graph retrieval index", () => {
     for (const id of ["\ud800", "\ud801"]) await kv.set(KV.graphNodes, id, node(id, "same"));
     const reader = (await createGraphIndexReader(kv))!;
     expect((await reader.posting("name", "same")).ids.sort()).toEqual(["\ud800", "\ud801"]);
+  });
+
+  it("spreads new index data over shard scopes within the pinned generation", async () => {
+    const { kv, data } = fixture();
+    expect(await initializeGraphIndex(kv, { status: "ready" })).toMatchObject({ schema: 3 });
+    for (let i = 0; i < 24; i++) await kv.set(KV.graphNodes, `n${i}`, node(`n${i}`, `name ${i}`));
+    const scopes = () => new Set([...data.keys()].map((key) => key.split("\0")[0]).filter((scope) => scope.startsWith(KV.graphRetrievalData)));
+    const shards = new Set(Array.from({ length: GRAPH_INDEX_DATA_SHARDS }, (_, index) => graphIndexDataShard(index)));
+    expect(scopes().size).toBeGreaterThan(8);
+    for (const scope of scopes()) expect(shards.has(scope)).toBe(true);
+    const reader = (await createGraphIndexReader(kv))!;
+    expect((await reader.posting("nodes")).total).toBe(24);
+    expect(await reader.getNode("n7")).toMatchObject({ name: "name 7" });
+    expect((await reader.posting("name", "name 7")).ids).toEqual(["n7"]);
+    for (let i = 0; i < 24; i++) await kv.delete(KV.graphNodes, `n${i}`);
+    expect([...data.keys()].filter((key) => key.startsWith(KV.graphRetrievalData) && !key.includes(":root:"))).toEqual([]);
+    expect(await getGraphIndexStatus(kv)).toMatchObject({ schema: 3, nodes: 0 });
+    data.clear();
+
+    await resetGraphGeneration(kv, { version: 1, dirty: false });
+    const generation = await kv.get<string>(KV.graphControl, "generation");
+    await kv.set(KV.graphNodes, "fresh", node("fresh"));
+    expect(scopes().size).toBeGreaterThan(0);
+    for (const scope of scopes()) {
+      expect(scope.endsWith(`:generation:${generation}`)).toBe(true);
+      expect(shards.has(scope.slice(0, -`:generation:${generation}`.length))).toBe(true);
+    }
+  });
+
+  it("keeps a schema 2 index in its single data scope", async () => {
+    const { kv, data } = fixture();
+    const control = await initializeGraphIndex(kv, { status: "ready" });
+    data.set(`${KV.graphRetrievalControl}\0current`, { ...control, schema: 2 });
+    await kv.set(KV.graphNodes, "a", node("a"));
+    await kv.set(KV.graphNodes, "b", node("b"));
+    await kv.delete(KV.graphNodes, "b");
+    const dataKeys = [...data.keys()].filter((key) => key.startsWith(KV.graphRetrievalData));
+    expect(dataKeys.length).toBeGreaterThan(0);
+    for (const key of dataKeys) expect(key.startsWith(`${KV.graphRetrievalData}\0`)).toBe(true);
+    expect(await getGraphIndexStatus(kv)).toMatchObject({ schema: 2, nodes: 1 });
+    const reader = (await createGraphIndexReader(kv))!;
+    expect((await reader.posting("nodes")).ids).toEqual(["a"]);
+    expect(await reader.getNode("a")).toMatchObject({ id: "a" });
+    expect(await reader.finish()).toBe(true);
   });
 });

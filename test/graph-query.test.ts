@@ -161,7 +161,7 @@ describe("request graph views", () => {
     await r.seed([node("a", "React"), node("b", "Hooks")], [edge("ab", "a", "b")]);
     const entered = deferred(); const release = deferred();
     r.intercept(async (scope) => {
-      if (scope === KV.graphRetrievalData) { r.intercept(); entered.resolve(); await release.promise; }
+      if (scope.startsWith(KV.graphRetrievalData)) { r.intercept(); entered.resolve(); await release.promise; }
     });
     const retrieval = new GraphRetrieval(r.kv);
     const pending = retrieval.searchByEntities(["React"]);

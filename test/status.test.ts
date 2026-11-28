@@ -295,6 +295,23 @@ describe("evaluateStatus", () => {
     expect(codes(evaluateStatus(inputs({ graphIndex: null })))).toEqual(["graph-index-unavailable"]);
   });
 
+  it("reports a single-scope graph index data file that nears the state worker save limit", () => {
+    const ready = { state: "ready" as const, ready: true, coverage: "complete" as const };
+    expect(evaluateStatus(inputs({ graphIndex: { ...ready, singleScopeBytes: 100 * 1024 * 1024 } })).problems).toEqual([]);
+    const growing = evaluateStatus(inputs({ graphIndex: { ...ready, singleScopeBytes: 600 * 1024 * 1024 } }));
+    expect(codes(growing)).toEqual(["graph-index-scope-limit"]);
+    expect(growing.status).toBe("warn");
+    expect(growing.problems[0].message).toContain("600 MiB");
+    const stuck = evaluateStatus(inputs({ graphIndex: { ...ready, singleScopeBytes: 1_073_666_728 } }));
+    expect(codes(stuck)).toEqual(["graph-index-scope-limit"]);
+    expect(stuck.status).toBe("error");
+    expect(stuck.problems[0].message).toContain("lost on restart");
+    expect(stuck.problems[0].fix).toContain("graph-index migrate --allow-legacy-scan");
+    const building = evaluateStatus(inputs({ graphIndex: { state: "building", ready: false, coverage: "unknown", action: "wait", singleScopeBytes: 1_070_683_736 } }));
+    expect(codes(building)).toEqual(["graph-index-not-ready", "graph-index-scope-limit"]);
+    expect(building.status).toBe("error");
+  });
+
   it("does not recommend legacy snapshot scans for an index-backed graph", () => {
     const report = evaluateStatus(inputs({ graph: { fromIndex: true, totalNodes: 12, totalEdges: 2, updatedAt: "2020-01-01T00:00:00Z" }, graphIndex: { state: "ready", ready: true, coverage: "complete" } }));
     expect(report.problems).toEqual([]);

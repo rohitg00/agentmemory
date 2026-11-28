@@ -31,17 +31,17 @@ describe("graph query byte budget", () => {
     const before = await getGraphIndexStatus(kv);
     let readBytes = 0;
     intercept(async (id, payload) => {
-      if (id === "state::get" && payload.scope === KV.graphRetrievalData) {
+      if (id === "state::get" && payload.scope.startsWith(KV.graphRetrievalData)) {
         readBytes += Buffer.byteLength(JSON.stringify(store.get(payload.scope)?.get(payload.key) ?? null));
       }
     });
     const result = await queryGraphIndex(kv, { query: "common", limit: 500 });
     expect(readBytes).toBeGreaterThan(queryBytes);
     expect(readBytes).toBeLessThanOrEqual(queryBytes + 32 * 1024);
-    expect(calls.filter(call => call.scope === KV.graphRetrievalData)).toHaveLength(
-      calls.filter(call => call.scope === KV.graphRetrievalData && call.id === "state::get").length,
+    expect(calls.filter(call => call.scope.startsWith(KV.graphRetrievalData))).toHaveLength(
+      calls.filter(call => call.scope.startsWith(KV.graphRetrievalData) && call.id === "state::get").length,
     );
-    expect(calls.filter(call => call.scope === KV.graphRetrievalData).length).toBeLessThanOrEqual(2048);
+    expect(calls.filter(call => call.scope.startsWith(KV.graphRetrievalData)).length).toBeLessThanOrEqual(2048);
     expect(calls.some(call => call.id === "state::list")).toBe(false);
     expect(await getGraphIndexStatus(kv)).toEqual(before);
     expect(result).toMatchObject({
@@ -68,7 +68,7 @@ describe("graph query byte budget", () => {
       let changed = false;
       intercept(async (id, payload) => {
         if (id !== "state::get") return;
-        if (payload.scope === KV.graphRetrievalData) {
+        if (payload.scope.startsWith(KV.graphRetrievalData)) {
           readBytes += Buffer.byteLength(JSON.stringify(store.get(payload.scope)?.get(payload.key) ?? null));
         }
         if (!changed && readBytes > queryBytes && payload.scope === KV.graphRetrievalControl && payload.key === "current") {
