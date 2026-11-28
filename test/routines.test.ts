@@ -5,6 +5,7 @@ vi.mock("../src/logger.js", () => ({
 }));
 
 import { registerRoutinesFunction } from "../src/functions/routines.js";
+import { KV } from "../src/state/schema.js";
 import type { Action, Routine, RoutineRun } from "../src/types.js";
 
 function mockKV() {
@@ -112,6 +113,31 @@ describe("Routines Functions", () => {
       expect(result.error).toBe("step 1 must have a title");
     });
 
+    it("rejects a step that depends on itself without saving the routine", async () => {
+      const result = await sdk.trigger("mem::routine-create", {
+        name: "Build pipeline",
+        steps: [{ title: "Build", dependsOn: [0] }],
+      });
+
+      expect(result).toMatchObject({ success: false, error: expect.stringMatching(/cycle/i) });
+      expect(await kv.list(KV.routines)).toEqual([]);
+    });
+
+    it("rejects a cycle even when an independent step can start", async () => {
+      const result = await sdk.trigger("mem::routine-create", {
+        name: "Build pipeline",
+        steps: [
+          { order: 10, title: "Build", dependsOn: [30] },
+          { order: 20, title: "Test", dependsOn: [10] },
+          { order: 30, title: "Package", dependsOn: [20] },
+          { order: 40, title: "Lint" },
+        ],
+      });
+
+      expect(result).toMatchObject({ success: false, error: expect.stringMatching(/cycle/i) });
+      expect(await kv.list(KV.routines)).toEqual([]);
+    });
+
     it("assigns correct order to steps", async () => {
       const result = (await sdk.trigger("mem::routine-create", {
         name: "Ordered Routine",
@@ -132,7 +158,7 @@ describe("Routines Functions", () => {
       const result = (await sdk.trigger("mem::routine-create", {
         name: "Custom Order",
         steps: [
-          { order: 10, title: "First", description: "", actionTemplate: {}, dependsOn: [] },
+          { order: 10, title: "First", description: "", actionTemplate: {}, dependsOn: [20] },
           { order: 20, title: "Second", description: "", actionTemplate: {}, dependsOn: [] },
         ],
       })) as { success: boolean; routine: Routine };
@@ -274,6 +300,23 @@ describe("Routines Functions", () => {
       expect(titles).toContain("Build");
       expect(titles).toContain("Test");
       expect(titles).toContain("Deploy");
+    });
+
+    it("rejects an already stored cyclic routine before creating any actions", async () => {
+      const routine = (await kv.get<Routine>(KV.routines, routineId))!;
+      await kv.set(KV.routines, routineId, {
+        ...routine,
+        steps: routine.steps.map((step) =>
+          step.order === 0 ? { ...step, dependsOn: [2] } : step,
+        ),
+      });
+
+      const result = await sdk.trigger("mem::routine-run", { routineId });
+
+      expect(result).toMatchObject({ success: false, error: expect.stringMatching(/cycle/i) });
+      expect(await kv.list(KV.actions)).toEqual([]);
+      expect(await kv.list(KV.actionEdges)).toEqual([]);
+      expect(await kv.list(KV.routineRuns)).toEqual([]);
     });
 
     it("creates dependency edges between steps", async () => {
