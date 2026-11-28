@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import Link from "next/link";
 
 export function CopyButton({
   text,
@@ -188,4 +189,22 @@ export function useScrollProgress<T extends HTMLElement>(steps = 0) {
     };
   }, [steps]);
   return ref;
+}
+
+export function HomeLink({ children, className, label }: { children: ReactNode; className?: string; label: string }) {
+  return (
+    <Link
+      href="/"
+      className={className}
+      aria-label={label}
+      onClick={(event) => {
+        if (window.location.pathname !== "/" || event.metaKey || event.ctrlKey || event.shiftKey) return;
+        event.preventDefault();
+        if (window.location.hash) window.history.replaceState(null, "", "/");
+        window.scrollTo({ top: 0 });
+      }}
+    >
+      {children}
+    </Link>
+  );
 }
