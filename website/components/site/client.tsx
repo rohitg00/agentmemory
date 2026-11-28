@@ -72,7 +72,7 @@ export function Reveal({
           }
         }
       },
-      { rootMargin: "0px 0px -12% 0px" },
+      { rootMargin: "0px 0px -4% 0px" },
     );
     io.observe(el);
     return () => io.disconnect();
