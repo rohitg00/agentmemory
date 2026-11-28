@@ -20,9 +20,16 @@ agentmemory-debug/
 .gstack/
 
 # Lock files — never commit (see feedback_no_lockfiles memory)
-package-lock.json
+# Except package-lock.json which is required for Nix buildNpmPackage reproducibility.
+!package-lock.json
 pnpm-lock.yaml
 yarn.lock
+flake.lock
+devbox.lock
+
+# Nix build result symlinks
+/result
+/result-*
 integrations/hermes/__pycache__/
 
 # Eval reports (transient; published scorecards live in docs/benchmarks/)
