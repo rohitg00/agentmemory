@@ -4,7 +4,7 @@ import { InMemoryKV } from "./in-memory-kv.js";
 import { createStdioTransport } from "./transport.js";
 import { installCrashHandlers } from "./crash-log.js";
 import { getAllTools } from "./tools-registry.js";
-import { getAgentId, getStandalonePersistPath, isAgentScopeIsolated } from "../config.js";
+import { getAgentId, getStandalonePersistPath, isAgentScopeIsolated, loadAgentScope } from "../config.js";
 import { isSearchLayer, type SearchLayer } from "../state/search-layer.js";
 import { memoryToObservation } from "../state/memory-utils.js";
 import { buildRecallResponse } from "../functions/recall-response.js";
@@ -228,6 +228,10 @@ async function handleProxy(
 ): Promise<{ content: Array<{ type: string; text: string }> }> {
   switch (v.tool) {
     case "memory_save": {
+      // Mirror the local lane: stamp the env agentId when the call doesn't
+      // carry an explicit one, so bridged saves are attributed instead of
+      // landing agentId: null on the server (issue #1828).
+      const saveAgentId = v.agentId ?? getAgentId();
       const result = await handle.call("/agentmemory/remember", {
         method: "POST",
         body: JSON.stringify({
@@ -238,12 +242,14 @@ async function handleProxy(
           ...(v.ttlDays !== undefined && { ttlDays: v.ttlDays }),
           ...(v.sourceObservationIds !== undefined && { sourceObservationIds: v.sourceObservationIds }),
           ...(v.project !== undefined && { project: v.project }),
-          ...(v.agentId !== undefined && { agentId: v.agentId }),
+          ...(saveAgentId !== undefined && { agentId: saveAgentId }),
         }),
       });
       return textResponse(result);
     }
     case "memory_recall": {
+      // Mirror the local lane: recall filters by the env agentId only when
+      // scope=isolated; shared reads stay cross-agent (issue #1828).
       const body: Record<string, unknown> = {
         query: v.query,
         limit: v.limit,
@@ -251,7 +257,7 @@ async function handleProxy(
         targetLayer: v.targetLayer,
         project: v.project,
         cwd: v.cwd,
-        agentId: v.agentId,
+        agentId: v.agentId ?? (isAgentScopeIsolated() ? getAgentId() : undefined),
       };
       if (v.tokenBudget != null) body["token_budget"] = v.tokenBudget;
       const result = await handle.call("/agentmemory/search", {
@@ -266,7 +272,7 @@ async function handleProxy(
         limit: v.limit,
         targetLayer: v.targetLayer,
         project: v.project,
-        agentId: v.agentId,
+        agentId: v.agentId ?? (isAgentScopeIsolated() ? getAgentId() : undefined),
         expandIds: v.expandIds,
         sessionId: v.sessionId,
         source: v.source,
@@ -483,6 +489,23 @@ async function handleLocal(
   }
 }
 
+// The bridge is a separate process from the server: the server's env does
+// not carry this agent's AGENT_ID, so proxied calls must transport identity
+// explicitly or every bridged write lands agentId: null and
+// AGENTMEMORY_AGENT_SCOPE is inert on bridged lanes (issue #1828). Sent as
+// request metadata alongside — never merged into — the tool arguments, so
+// per-call arguments keep winning over the env-derived identity.
+interface ProxiedAgentIdentity {
+  agentId?: string;
+  agentScope?: "shared" | "isolated";
+}
+
+function proxiedAgentIdentity(): ProxiedAgentIdentity {
+  const scope = loadAgentScope();
+  if (!scope) return {};
+  return { agentId: scope.agentId, agentScope: scope.mode };
+}
+
 async function handleProxyGeneric(
   toolName: string,
   args: Record<string, unknown>,
@@ -494,7 +517,7 @@ async function handleProxyGeneric(
   // this shim. The server validates arguments per tool.
   const result = (await handle.call("/agentmemory/mcp/call", {
     method: "POST",
-    body: JSON.stringify({ name: toolName, arguments: args }),
+    body: JSON.stringify({ name: toolName, arguments: args, ...proxiedAgentIdentity() }),
   })) as { content?: Array<{ type: string; text: string }> } | null;
   if (result && Array.isArray(result.content)) {
     return { content: result.content };
