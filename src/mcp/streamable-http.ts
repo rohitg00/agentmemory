@@ -5,7 +5,8 @@ import { VERSION } from "../version.js";
 
 export const MCP_HTTP_PATH = "/agentmemory/mcp";
 export const MODERN_PROTOCOL_VERSIONS = ["2026-07-28"];
-export const LEGACY_PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
+export const LEGACY_PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"];
+const BATCH_PROTOCOL_VERSION = "2025-03-26";
 
 const SUPPORTED_PROTOCOL_VERSIONS = [...MODERN_PROTOCOL_VERSIONS, ...LEGACY_PROTOCOL_VERSIONS];
 const SERVER_INFO = { name: "agentmemory", version: VERSION };
@@ -208,11 +209,23 @@ async function dispatch(deps: McpHttpDeps, call: Call): Promise<Outcome> {
     case "tools/list":
       return list(deps.rest.listTools);
     case "resources/list":
-      return list(deps.rest.listResources);
+    case "resources/templates/list": {
+      const res = await rest(deps.rest.listResources);
+      if (!isSuccess(res)) return restFailure(res);
+      const entries = isObject(res.body) ? res.body["resources"] : undefined;
+      if (!Array.isArray(entries)) return fail(INTERNAL_ERROR, "Internal error");
+      const isTemplate = (entry: JsonObject) => typeof entry["uri"] === "string" && entry["uri"].includes("{");
+      const resources = entries.filter(isObject);
+      if (method === "resources/list") {
+        return succeed({ resources: resources.filter((entry) => !isTemplate(entry)) }, PUBLIC_LIST);
+      }
+      const resourceTemplates = resources
+        .filter(isTemplate)
+        .map(({ uri, ...rest }) => ({ ...rest, uriTemplate: uri }));
+      return succeed({ resourceTemplates }, PUBLIC_LIST);
+    }
     case "prompts/list":
       return list(deps.rest.listPrompts);
-    case "resources/templates/list":
-      return succeed({ resourceTemplates: [] }, PUBLIC_LIST);
     case "tools/call": {
       const name = params["name"];
       if (typeof name !== "string" || !name) return fail(INVALID_PARAMS, "name is required");
@@ -290,51 +303,72 @@ export function createMcpHttpHandler(deps: McpHttpDeps): (req: HttpRequest) => P
     if (message === undefined || message === null) {
       return errorResponse(undefined, fail(PARSE_ERROR, "Parse error", 400));
     }
-    if (Array.isArray(message)) {
+    if (!Array.isArray(message)) return (await handleMessage(deps, req, message, false)) ?? ACCEPTED;
+
+    const headerVersion = readHeader(req.headers, "mcp-protocol-version");
+    if (headerVersion !== undefined && headerVersion !== BATCH_PROTOCOL_VERSION) {
       return errorResponse(undefined, fail(INVALID_REQUEST, "Batch requests are not supported", 400));
     }
-    if (!isObject(message) || message["jsonrpc"] !== "2.0") {
-      return errorResponse(undefined, fail(INVALID_REQUEST, "Invalid JSON-RPC message", 400));
+    if (message.length === 0) {
+      return errorResponse(undefined, fail(INVALID_REQUEST, "Invalid JSON-RPC message: empty batch", 400));
     }
-
-    const hasId = "id" in message;
-    const method = message["method"];
-    if (typeof method !== "string") {
-      const isClientResponse = hasId && ("result" in message || "error" in message);
-      if (isClientResponse) return ACCEPTED;
-      return errorResponse(undefined, fail(INVALID_REQUEST, "Invalid JSON-RPC message: method is required", 400));
-    }
-    if (!hasId) return ACCEPTED;
-
-    const id = message["id"];
-    if (typeof id !== "string" && !(typeof id === "number" && Number.isInteger(id))) {
-      return errorResponse(undefined, fail(INVALID_REQUEST, "Invalid JSON-RPC message: id must be a string or an integer", 400));
-    }
-    const rawParams = message["params"];
-    if (rawParams !== undefined && !isObject(rawParams)) {
-      return errorResponse(id, fail(INVALID_PARAMS, "params must be an object", 400));
-    }
-
-    const params = rawParams ?? {};
-    const meta = isObject(params["_meta"]) ? params["_meta"] : {};
-    const headerVersion = readHeader(req.headers, "mcp-protocol-version");
-    const modern =
-      META_PROTOCOL_VERSION in meta ||
-      method === "server/discover" ||
-      (headerVersion !== undefined && !LEGACY_PROTOCOL_VERSIONS.includes(headerVersion));
-    const call: Call = { req, method, params, modern };
-
-    if (modern) {
-      const invalid = validateModernEnvelope(call, meta, headerVersion);
-      if (invalid) return errorResponse(id, invalid);
-    }
-
-    let outcome: Outcome;
-    try {
-      outcome = await dispatch(deps, call);
-    } catch {
-      outcome = fail(INTERNAL_ERROR, "Internal error");
-    }
-    return outcome.ok ? resultResponse(id, outcome, modern) : errorResponse(id, outcome);
+    const replies = await Promise.all(message.map((entry) => handleMessage(deps, req, entry, true)));
+    const bodies = replies.filter((reply): reply is McpHttpResponse => reply !== null).map((reply) => reply.body);
+    return bodies.length === 0 ? ACCEPTED : { status_code: 200, body: bodies };
   };
+}
+
+async function handleMessage(
+  deps: McpHttpDeps,
+  req: HttpRequest,
+  message: unknown,
+  inBatch: boolean,
+): Promise<McpHttpResponse | null> {
+  if (!isObject(message) || message["jsonrpc"] !== "2.0") {
+    return errorResponse(undefined, fail(INVALID_REQUEST, "Invalid JSON-RPC message", 400));
+  }
+
+  const hasId = "id" in message;
+  const method = message["method"];
+  if (typeof method !== "string") {
+    const isClientResponse = hasId && ("result" in message || "error" in message);
+    if (isClientResponse) return null;
+    return errorResponse(undefined, fail(INVALID_REQUEST, "Invalid JSON-RPC message: method is required", 400));
+  }
+  if (!hasId) return null;
+
+  const id = message["id"];
+  if (typeof id !== "string" && !(typeof id === "number" && Number.isInteger(id))) {
+    return errorResponse(undefined, fail(INVALID_REQUEST, "Invalid JSON-RPC message: id must be a string or an integer", 400));
+  }
+  const rawParams = message["params"];
+  if (rawParams !== undefined && !isObject(rawParams)) {
+    return errorResponse(id, fail(INVALID_PARAMS, "params must be an object", 400));
+  }
+
+  const params = rawParams ?? {};
+  const meta = isObject(params["_meta"]) ? params["_meta"] : {};
+  const headerVersion = readHeader(req.headers, "mcp-protocol-version");
+  const modern =
+    META_PROTOCOL_VERSION in meta ||
+    method === "server/discover" ||
+    (headerVersion !== undefined && !LEGACY_PROTOCOL_VERSIONS.includes(headerVersion));
+  const call: Call = { req, method, params, modern };
+
+  if (inBatch && (modern || method === "initialize")) {
+    return errorResponse(id, fail(INVALID_REQUEST, `${clip(method)} is not allowed in a batch`, 400));
+  }
+
+  if (modern) {
+    const invalid = validateModernEnvelope(call, meta, headerVersion);
+    if (invalid) return errorResponse(id, invalid);
+  }
+
+  let outcome: Outcome;
+  try {
+    outcome = await dispatch(deps, call);
+  } catch {
+    outcome = fail(INTERNAL_ERROR, "Internal error");
+  }
+  return outcome.ok ? resultResponse(id, outcome, modern) : errorResponse(id, outcome);
 }

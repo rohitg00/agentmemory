@@ -1091,8 +1091,8 @@ For a host that reads a config file, the shape depends on the host. Most take a 
 `<secret>` is the value of `AGENTMEMORY_SECRET`, or the generated secret in `~/.agentmemory/secret`.
 
 - The path accepts `POST` and returns `405` for `GET` and `DELETE`. It serves the same tools, resources and prompts as the stdio shim, and `AGENTMEMORY_TOOLS` selects the listed tools in the same way.
-- It accepts both protocol generations on the same path: the stateless requests of MCP revision `2026-07-28` (including `server/discover`), and the `initialize` handshake of revisions `2025-03-26` to `2025-11-25`. The server keeps no MCP session, issues no session id and opens no server-to-client stream, so any worker can answer any request.
-- It uses the bearer secret and the `Origin` check of the REST API. A browser-based client needs its origin in `VIEWER_ALLOWED_ORIGINS`.
+- It accepts both protocol generations on the same path: the stateless requests of MCP revision `2026-07-28` (including `server/discover`), and the `initialize` handshake of revisions `2025-03-26` to `2025-11-25`. JSON-RPC batches are accepted only from `2025-03-26` clients, the one revision that allows them. The server keeps no MCP session, issues no session id and opens no server-to-client stream, so any worker can answer any request.
+- It uses the bearer secret and the `Origin` check of the REST API. A browser-based client needs its origin in `VIEWER_ALLOWED_ORIGINS`; `agentmemory start` also adds those origins to the HTTP worker's CORS allowlist. In the Docker image, put the origin in both `VIEWER_ALLOWED_ORIGINS` and `REST_ALLOWED_ORIGINS`.
 - Keep the stdio shim for a host that supports only stdio, or that cannot send an `Authorization` header.
 
 ---

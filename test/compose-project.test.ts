@@ -48,6 +48,20 @@ describe("Worker Compose project", () => {
     },
   );
 
+  it("adds VIEWER_ALLOWED_ORIGINS to the HTTP worker CORS allowlist", () => {
+    const text = renderWorkerCompose(options({
+      workerEnvironment: { VIEWER_ALLOWED_ORIGINS: "http://localhost:4173, https://App.example/,http://localhost:3511" },
+    }));
+    expect(parse(text).containers.http.config_override.cors.allowed_origins).toEqual([
+      "http://localhost:3511",
+      "http://localhost:3513",
+      "http://127.0.0.1:3511",
+      "http://127.0.0.1:3513",
+      "http://localhost:4173",
+      "https://app.example",
+    ]);
+  });
+
   it("pins registry workers and configures the isolated engine, state and HTTP", () => {
     const text = renderWorkerCompose(options());
     expect(text).toContain("namespace: agentmemory-3511");

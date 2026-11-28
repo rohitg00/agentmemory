@@ -13,7 +13,14 @@ const PROTOCOL_VERSION = "io.modelcontextprotocol/protocolVersion";
 const CLIENT_CAPABILITIES = "io.modelcontextprotocol/clientCapabilities";
 const SERVER_INFO = "io.modelcontextprotocol/serverInfo";
 const MODERN = "2026-07-28";
+const CONCRETE_URIS = ["agentmemory://status", "agentmemory://memories/latest", "agentmemory://graph/stats"];
+const TEMPLATE_URIS = [
+  "agentmemory://project/{name}/profile",
+  "agentmemory://project/{name}/recent",
+  "agentmemory://team/{id}/profile",
+];
 
+// JSON-RPC bodies are asserted field by field; typing every result shape adds nothing to these tests.
 type Response = { status_code: number; headers?: Record<string, string>; body: any };
 type Headers = Record<string, string | undefined>;
 
@@ -148,11 +155,10 @@ describe("streamable HTTP MCP endpoint: routing", () => {
     expect(res.body).toEqual({ jsonrpc: "2.0", id: 7, result: {} });
   });
 
-  it("rejects batches, non JSON-RPC bodies and a null id", async () => {
+  it("rejects non JSON-RPC bodies and a null id", async () => {
     const { endpoint } = setup();
     const headers = { "content-type": "application/json" };
     const bodies = [
-      [{ jsonrpc: "2.0", id: 1, method: "ping" }],
       { id: 1, method: "ping" },
       { jsonrpc: "2.0", id: 1 },
       { jsonrpc: "2.0", id: null, method: "ping" },
@@ -199,7 +205,7 @@ describe("streamable HTTP MCP endpoint: 2026-07-28 stateless requests", () => {
     expect(res.body.id).toBe("discover-1");
     expect(res.body.result).toEqual({
       resultType: "complete",
-      supportedVersions: ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"],
+      supportedVersions: ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"],
       capabilities: { tools: {}, resources: {}, prompts: {} },
       ttlMs: 300000,
       cacheScope: "public",
@@ -222,11 +228,13 @@ describe("streamable HTTP MCP endpoint: 2026-07-28 stateless requests", () => {
   it("lists resources, resource templates and prompts", async () => {
     const { endpoint } = setup();
     const resources = (await endpoint(modernRequest("resources/list"))).body.result;
-    expect(resources.resources.length).toBeGreaterThan(0);
+    expect(resources.resources.map((r: { uri: string }) => r.uri)).toEqual(CONCRETE_URIS);
     expect(resources).toMatchObject({ resultType: "complete", ttlMs: 300000, cacheScope: "public" });
 
     const templates = (await endpoint(modernRequest("resources/templates/list"))).body.result;
-    expect(templates).toMatchObject({ resourceTemplates: [], ttlMs: 300000, cacheScope: "public" });
+    expect(templates.resourceTemplates.map((r: { uriTemplate: string }) => r.uriTemplate)).toEqual(TEMPLATE_URIS);
+    expect(templates.resourceTemplates.every((r: Record<string, unknown>) => !("uri" in r) && typeof r["name"] === "string")).toBe(true);
+    expect(templates).toMatchObject({ resultType: "complete", ttlMs: 300000, cacheScope: "public" });
 
     const prompts = (await endpoint(modernRequest("prompts/list"))).body.result;
     expect(prompts.prompts.length).toBeGreaterThan(0);
@@ -443,6 +451,85 @@ describe("streamable HTTP MCP endpoint: initialize-based clients", () => {
     const res = await endpoint(legacyRequest("logging/setLevel", { level: "info" }));
     expect(res.status_code).toBe(200);
     expect(res.body.error.code).toBe(-32601);
+  });
+
+  it("splits concrete resources from resource templates", async () => {
+    const { endpoint } = setup();
+    const resources = (await endpoint(legacyRequest("resources/list"))).body.result;
+    expect(resources.resources.map((r: { uri: string }) => r.uri)).toEqual(CONCRETE_URIS);
+    const templates = (await endpoint(legacyRequest("resources/templates/list"))).body.result;
+    expect(templates.resourceTemplates.map((r: { uriTemplate: string }) => r.uriTemplate)).toEqual(TEMPLATE_URIS);
+  });
+
+  it("offers 2025-11-25 to a client that asks for 2024-11-05", async () => {
+    const { endpoint } = setup();
+    const res = await endpoint(legacyRequest("initialize", { protocolVersion: "2024-11-05" }));
+    expect(res.body.result.protocolVersion).toBe("2025-11-25");
+  });
+
+  it("answers a 2025-03-26 batch with one result per request", async () => {
+    const { endpoint } = setup();
+    for (const headers of [{}, { "mcp-protocol-version": "2025-03-26" }] as Headers[]) {
+      const res = await endpoint({
+        method: "POST",
+        headers: withoutUndefined({ "content-type": "application/json", ...headers }),
+        body: [
+          { jsonrpc: "2.0", id: 1, method: "tools/list" },
+          { jsonrpc: "2.0", method: "notifications/initialized" },
+          { jsonrpc: "2.0", id: "p", method: "prompts/list" },
+          { jsonrpc: "2.0", id: 3, method: "logging/setLevel", params: { level: "info" } },
+        ],
+      });
+      expect(res.status_code).toBe(200);
+      expect(res.body.map((entry: { id: unknown }) => entry.id)).toEqual([1, "p", 3]);
+      expect(res.body[0].result.tools.length).toBeGreaterThan(0);
+      expect(res.body[1].result.prompts.length).toBeGreaterThan(0);
+      expect(res.body[2].error.code).toBe(-32601);
+    }
+  });
+
+  it("answers a batch of notifications with 202", async () => {
+    const { endpoint } = setup();
+    const res = await endpoint({
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: [{ jsonrpc: "2.0", method: "notifications/initialized" }, { jsonrpc: "2.0", id: 9, result: {} }],
+    });
+    expect(res).toEqual({ status_code: 202, headers: { "Content-Type": "text/plain" }, body: "" });
+  });
+
+  it("rejects initialize, 2026-07-28 requests and malformed entries inside a batch", async () => {
+    const { endpoint } = setup();
+    const res = await endpoint({
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: [
+        { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26" } },
+        modernRequest("tools/list", {}, { id: 2 }).body,
+        { id: 3, method: "ping" },
+        { jsonrpc: "2.0", id: 4, method: "ping" },
+      ],
+    });
+    expect(res.status_code).toBe(200);
+    expect(res.body.map((entry: { error?: { code: number } }) => entry.error?.code)).toEqual([-32600, -32600, -32600, undefined]);
+    expect(res.body[3]).toEqual({ jsonrpc: "2.0", id: 4, result: {} });
+  });
+
+  it("rejects batches for revisions that removed them, and an empty batch", async () => {
+    const { endpoint } = setup();
+    const batch = [{ jsonrpc: "2.0", id: 1, method: "ping" }];
+    for (const version of ["2025-06-18", "2025-11-25", MODERN]) {
+      const res = await endpoint({
+        method: "POST",
+        headers: { "content-type": "application/json", "mcp-protocol-version": version },
+        body: batch,
+      });
+      expect(res.status_code).toBe(400);
+      expect(res.body.error.code).toBe(-32600);
+    }
+    const empty = await endpoint({ method: "POST", headers: { "content-type": "application/json" }, body: [] });
+    expect(empty.status_code).toBe(400);
+    expect(empty.body.error.code).toBe(-32600);
   });
 
   it("keeps the older resource-not-found code", async () => {
