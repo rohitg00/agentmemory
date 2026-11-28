@@ -27,7 +27,7 @@ export const src = {
 };
 
 export const NAV = [
-  { label: "Use cases", href: "/#use-cases" },
+  { label: "Use cases", href: "/use-cases" },
   { label: "How it works", href: "/#how" },
   { label: "Benchmarks", href: "/benchmarks" },
   { label: "Security", href: "/security" },

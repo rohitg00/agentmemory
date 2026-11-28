@@ -6,6 +6,9 @@ import { COMPETITORS } from "@/lib/compare";
 const PAGES: Array<{ path: string; priority: number; changeFrequency: "weekly" | "monthly" }> = [
   { path: "/", priority: 1, changeFrequency: "weekly" },
   { path: "/benchmarks", priority: 0.8, changeFrequency: "monthly" },
+  { path: "/how-it-works", priority: 0.8, changeFrequency: "monthly" },
+  { path: "/use-cases", priority: 0.8, changeFrequency: "monthly" },
+  { path: "/agents", priority: 0.8, changeFrequency: "monthly" },
   { path: "/security", priority: 0.7, changeFrequency: "monthly" },
   { path: "/privacy", priority: 0.5, changeFrequency: "monthly" },
   { path: "/changelog", priority: 0.7, changeFrequency: "weekly" },

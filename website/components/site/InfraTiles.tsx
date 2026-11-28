@@ -110,7 +110,7 @@ export function InfraTiles() {
           <div className={s.art}>
             <Compaction />
           </div>
-          <a className="src" href="/#value">
+          <a className="src" href="/how-it-works#value">
             what your agent gets
           </a>
         </Reveal>

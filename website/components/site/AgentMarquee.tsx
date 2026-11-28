@@ -22,7 +22,7 @@ export function AgentMarquee() {
     <section className={s.strip} aria-label="Supported coding agents">
       <div className={`wrap ${s.head}`}>
         <span className={`mono ${s.label}`}>One memory across {AGENTS.length} coding agents</span>
-        <a className={`mono ${s.all}`} href="/#agents">
+        <a className={`mono ${s.all}`} href="/agents">
           See how each one connects
         </a>
       </div>
