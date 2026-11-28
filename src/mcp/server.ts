@@ -14,6 +14,7 @@ import { checkAuth, slotsDisabledResponse } from "../triggers/api.js";
 import { isSlotsEnabled } from "../functions/slots.js";
 import { LESSON_SOURCE_IDS_MAX, normalizeLessonSourceIds } from "../functions/lessons.js";
 import { getAgentId, isAgentScopeIsolated } from "../config.js";
+import { MCP_HTTP_PATH, createMcpHttpHandler } from "./streamable-http.js";
 type McpResponse = {
   status_code: number;
   headers?: Record<string, string>;
@@ -44,21 +45,21 @@ export function registerMcpEndpoints(
   secret?: string,
 ): void {
   const slotsEnabled = isSlotsEnabled();
-  sdk.registerFunction("mcp::tools::list",
+  const listTools =
     async (req: HttpRequest): Promise<McpResponse> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
       const tools = getVisibleTools().filter((t) => slotsEnabled || !isSlotTool(t.name));
       return { status_code: 200, body: { tools } };
-    },
-  );
+    };
+  sdk.registerFunction("mcp::tools::list", listTools);
   sdk.registerTrigger({
     type: "http",
     function_id: "mcp::tools::list",
     config: { api_path: "/agentmemory/mcp/tools", http_method: "GET" },
   });
 
-  sdk.registerFunction("mcp::tools::call", 
+  const callTool =
     async (
       req: HttpRequest<{ name: string; arguments: Record<string, unknown> }>,
     ): Promise<McpResponse> => {
@@ -1323,8 +1324,8 @@ export function registerMcpEndpoints(
           },
         };
       }
-    },
-  );
+    };
+  sdk.registerFunction("mcp::tools::call", callTool);
   sdk.registerTrigger({
     type: "http",
     function_id: "mcp::tools::call",
@@ -1371,20 +1372,20 @@ export function registerMcpEndpoints(
     },
   ];
 
-  sdk.registerFunction("mcp::resources::list", 
+  const listResources =
     async (req: HttpRequest): Promise<McpResponse> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
       return { status_code: 200, body: { resources: MCP_RESOURCES } };
-    },
-  );
+    };
+  sdk.registerFunction("mcp::resources::list", listResources);
   sdk.registerTrigger({
     type: "http",
     function_id: "mcp::resources::list",
     config: { api_path: "/agentmemory/mcp/resources", http_method: "GET" },
   });
 
-  sdk.registerFunction("mcp::resources::read", 
+  const readResource =
     async (req: HttpRequest<{ uri: string }>): Promise<McpResponse> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
@@ -1610,8 +1611,8 @@ export function registerMcpEndpoints(
       } catch {
         return { status_code: 500, body: { error: "Internal error" } };
       }
-    },
-  );
+    };
+  sdk.registerFunction("mcp::resources::read", readResource);
   sdk.registerTrigger({
     type: "http",
     function_id: "mcp::resources::read",
@@ -1659,20 +1660,20 @@ export function registerMcpEndpoints(
     },
   ];
 
-  sdk.registerFunction("mcp::prompts::list", 
+  const listPrompts =
     async (req: HttpRequest): Promise<McpResponse> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
       return { status_code: 200, body: { prompts: MCP_PROMPTS } };
-    },
-  );
+    };
+  sdk.registerFunction("mcp::prompts::list", listPrompts);
   sdk.registerTrigger({
     type: "http",
     function_id: "mcp::prompts::list",
     config: { api_path: "/agentmemory/mcp/prompts", http_method: "GET" },
   });
 
-  sdk.registerFunction("mcp::prompts::get", 
+  const getPrompt =
     async (
       req: HttpRequest<{ name: string; arguments?: Record<string, string> }>,
     ): Promise<McpResponse> => {
@@ -1802,11 +1803,28 @@ export function registerMcpEndpoints(
       } catch {
         return { status_code: 500, body: { error: "Internal error" } };
       }
-    },
-  );
+    };
+  sdk.registerFunction("mcp::prompts::get", getPrompt);
   sdk.registerTrigger({
     type: "http",
     function_id: "mcp::prompts::get",
     config: { api_path: "/agentmemory/mcp/prompts/get", http_method: "POST" },
   });
+
+  const knownTools = new Set(getAllTools().map((t) => t.name));
+  sdk.registerFunction(
+    "mcp::http",
+    createMcpHttpHandler({
+      secret,
+      isKnownTool: (name) => knownTools.has(name),
+      rest: { listTools, callTool, listResources, readResource, listPrompts, getPrompt },
+    }),
+  );
+  for (const http_method of ["POST", "GET", "DELETE"]) {
+    sdk.registerTrigger({
+      type: "http",
+      function_id: "mcp::http",
+      config: { api_path: MCP_HTTP_PATH, http_method },
+    });
+  }
 }
