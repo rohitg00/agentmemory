@@ -343,7 +343,7 @@ agentmemory --instance 1
 
 مقارنة محدثة بين المنتجات وخيارات النشر، مع المصادر:
 
-[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem / Loom](../benchmark/COMPARISON.md).
 
 ---
 

@@ -341,7 +341,7 @@ agentmemory --instance 1
 
 Ενημερωμένη σύγκριση προϊόντων και επιλογών εγκατάστασης με πηγές:
 
-[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem / Loom](../benchmark/COMPARISON.md).
 
 ---
 

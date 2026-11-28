@@ -395,7 +395,7 @@ Choose by workload and deployment. Other products also offer local deployment or
 | [Cognee](https://github.com/topoteretes/cognee) | Turning documents, code and conversations into searchable knowledge |
 | [claude-mem](https://github.com/thedotmack/claude-mem) | Capturing and summarizing coding sessions across supported agents |
 
-[Detailed comparison and sources](benchmark/COMPARISON.md), checked 2026-10-28. Deployment options, provider costs and integrations vary; scores from different datasets and metrics are not a head-to-head ranking.
+[Detailed comparison and sources](benchmark/COMPARISON.md). Deployment options, provider costs and integrations vary; scores from different datasets and metrics are not a head-to-head ranking.
 
 ---
 

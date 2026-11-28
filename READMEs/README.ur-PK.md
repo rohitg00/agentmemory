@@ -341,7 +341,7 @@ agentmemory --instance 1
 
 مصنوعات اور تنصیب کے طریقوں کا تازہ موازنہ، حوالوں کے ساتھ:
 
-[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem / Loom](../benchmark/COMPARISON.md).
 
 ---
 

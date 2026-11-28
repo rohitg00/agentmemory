@@ -1,6 +1,6 @@
 # Choosing a memory system
 
-Checked against the linked primary sources on 2026-10-28. Products evolve; deployment, model usage and commercial plans depend on the selected configuration.
+The table links to each project’s documentation or source repository. Products evolve; deployment, model usage and commercial plans depend on the selected configuration.
 
 | Project | Main use | Deployment and integration |
 |---|---|---|
@@ -11,6 +11,7 @@ Checked against the linked primary sources on 2026-10-28. Products evolve; deplo
 | **[Letta](https://docs.letta.com/)** | Stateful agents with managed memory | Agent harness, CLI and SDK with MemFS/shared memory; managed cloud or self-hosted runtime. It supplies the agent runtime as well as memory. |
 | **[Cognee](https://github.com/topoteretes/cognee)** | Searchable knowledge from documents, code and conversations | Open-source local library/server or Cognee Cloud, with plugins and MCP. Local extraction and embedding models support a keyless path. |
 | **[claude-mem](https://github.com/thedotmack/claude-mem)** | Capture and summarize coding sessions | Apache-2.0 project with multiple agent integrations. Model-backed summaries can use its hosted observer or a configured provider; installation and provider choices affect data flow and cost. |
+| **[Loom](https://loom.clickhouse.com/docs/use-cases/agent-memory#choosing-a-memory-tool-for-coding-agents)** | Shared agent memory linked to files and symbols, plus document and code search | Apache-2.0 server with ClickHouse storage. Choose [optional Postgres for live memory and knowledge state](https://loom.clickhouse.com/docs/architecture/storage-authority#recorded-authority) at first boot. Deploy with Docker or Helm. Agents connect over MCP or HTTP, with Python and TypeScript SDKs. Authenticated team deployments scope access by namespace and role. |
 
 AgentMemory fits developers who want one local memory service shared by their existing tools, with inspectable observations, lessons, actions, source expansion and a live viewer. An application-facing API, managed enterprise platform, document graph or complete stateful-agent runtime may suit a different workload better.
 

@@ -339,7 +339,7 @@ Aktualne wyniki wyszukiwania, definicje metryk i kroki odtworzenia testu:
 
 Aktualne porównanie produktów i opcji wdrożenia wraz ze źródłami:
 
-[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem / Loom](../benchmark/COMPARISON.md).
 
 ---
 

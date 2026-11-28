@@ -339,7 +339,7 @@ Kasalukuyang resulta ng paghahanap, kahulugan ng mga sukatan, at mga hakbang sa 
 
 Na-update na paghahambing ng mga produkto at paraan ng deployment, kasama ang mga sanggunian:
 
-[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem / Loom](../benchmark/COMPARISON.md).
 
 ---
 
